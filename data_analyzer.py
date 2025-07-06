@@ -14,65 +14,89 @@ import seaborn as sns
 from collections import defaultdict
 import logging
 from config import DATA_PATHS, STORAGE_CONFIG
-
-if STORAGE_CONFIG['type'] == 's3':
-    try:
-        from s3_handler import list_files, get_file_content, upload_file_obj
-    except ImportError:
-        print("s3_handler.py nicht gefunden. S3-Funktionen werden nicht verfügbar sein.")
-        list_files, get_file_content, upload_file_obj = None, None, None
+import s3_handler
 
 class WSBDataAnalyzer:
     def __init__(self):
         """Initialisiert den Datenanalyzer"""
-        self.setup_logging()
         self.all_results = []
         self.combined_df = None
-        
-    def setup_logging(self):
-        """Konfiguriert das Logging"""
+        self.log_file_path = None
+        self.session_path_for_saving = None
+        self.logger = logging.getLogger(__name__)
+        if not self.logger.handlers:
+            self.setup_logging() # Grundkonfiguration
+
+    def setup_logging(self, session_path=None):
+        """Konfiguriert das Logging für die aktuelle Analyse-Session."""
         os.makedirs(DATA_PATHS['logs_dir'], exist_ok=True)
+        
+        if session_path:
+            session_id = session_path.replace('/', '_').strip('_')
+            self.log_file_path = f"{DATA_PATHS['logs_dir']}/analyzer_{session_id}.log"
+        else:
+            # Fallback, wenn keine Session vorhanden ist
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.log_file_path = f"{DATA_PATHS['logs_dir']}/analyzer_{timestamp}.log"
+
+        # Entferne bestehende Handler, um Doppel-Logging zu vermeiden
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+            handler.close()
+
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
             handlers=[
-                logging.FileHandler(f"{DATA_PATHS['logs_dir']}/analyzer.log"),
+                logging.FileHandler(self.log_file_path),
                 logging.StreamHandler()
             ]
         )
         self.logger = logging.getLogger(__name__)
         
-    def load_all_results(self):
-        """Lädt alle gespeicherten Crawling-Ergebnisse von lokal oder S3."""
+    def load_all_results(self, session_path=None):
+        """
+        Lädt Crawling-Ergebnisse. Wenn session_path angegeben, nur von dort.
+        Sonst werden alle Ergebnisse geladen.
+        """
         self.all_results = []
+        self.session_path_for_saving = session_path
         try:
-            if STORAGE_CONFIG['type'] == 's3' and list_files and get_file_content:
+            if STORAGE_CONFIG['type'] == 's3':
                 self.logger.info("Lade Ergebnisse von S3...")
-                s3_files = list_files(prefix=DATA_PATHS['results_dir'])
-                if s3_files is None:
-                    return False
+                prefix = f"{DATA_PATHS['results_dir']}{session_path if session_path else ''}"
+                s3_files = s3_handler.list_files(prefix=prefix)
+                if s3_files is None: return False
                 
-                json_files = [f for f in s3_files if f.endswith('.json')]
+                json_files = [f for f in s3_files if f.endswith('wsb_mentions.json')]
                 if not json_files:
-                    self.logger.warning("Keine Ergebnisdateien auf S3 gefunden.")
+                    self.logger.warning(f"Keine 'wsb_mentions.json' Dateien auf S3 im Pfad '{prefix}' gefunden.")
                     return False
                 
                 for s3_file_key in json_files:
                     try:
-                        content = get_file_content(s3_file_key)
+                        content = s3_handler.get_file_content(s3_file_key)
                         if content:
-                            self.all_results.append(json.loads(content))
+                            data = json.loads(content)
+                            # Speichere den Pfad für das spätere Speichern der Analyse
+                            if not session_path:
+                                self.session_path_for_saving = os.path.dirname(s3_file_key.replace(DATA_PATHS['results_dir'], '')) + '/'
+                            self.all_results.append(data)
                     except Exception as e:
                         self.logger.error(f"Fehler beim Laden von {s3_file_key} von S3: {e}")
             else:
                 self.logger.info("Lade Ergebnisse vom lokalen Dateisystem...")
-                local_json_files = glob.glob(f"{DATA_PATHS['results_dir']}/*.json")
+                search_path = os.path.join(DATA_PATHS['results_dir'], session_path if session_path else '**')
+                local_json_files = glob.glob(f"{search_path}/wsb_mentions.json", recursive=True)
                 if not local_json_files:
-                    self.logger.warning("Keine lokalen Ergebnisdateien gefunden.")
+                    self.logger.warning(f"Keine 'wsb_mentions.json' Dateien lokal im Pfad '{search_path}' gefunden.")
                     return False
                 
                 for json_file in local_json_files:
                     try:
+                        if not session_path:
+                             self.session_path_for_saving = os.path.dirname(json_file).replace(DATA_PATHS['results_dir'], '').replace('\\', '/') + '/'
                         with open(json_file, 'r', encoding='utf-8') as f:
                             self.all_results.append(json.load(f))
                     except Exception as e:
@@ -234,23 +258,29 @@ class WSBDataAnalyzer:
             return None
             
     def save_analysis_results(self):
-        """Speichert die Analyseergebnisse auf lokal oder S3."""
+        """Speichert die Analyseergebnisse in den entsprechenden Session-Ordner."""
         try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            analysis_dir = DATA_PATHS['analysis_dir']
+            if not self.session_path_for_saving:
+                self.logger.error("Kein Session-Pfad zum Speichern der Analyse vorhanden.")
+                # Fallback: Erstelle neuen Timestamp
+                now = datetime.now()
+                self.session_path_for_saving = f"{now.strftime('%Y-%m-%d')}/{now.strftime('%H%M%S')}/"
+
+            analysis_base_dir = DATA_PATHS['analysis_dir']
+            session_save_path = self.session_path_for_saving
 
             # Helferfunktion zum Speichern
             def _save(content, filename, is_bytes=False):
-                if STORAGE_CONFIG['type'] == 's3' and upload_file_obj:
+                if STORAGE_CONFIG['type'] == 's3':
                     buffer = io.BytesIO(content if is_bytes else content.encode('utf-8'))
-                    s3_key = f"{analysis_dir}{filename}"
-                    if upload_file_obj(buffer, s3_key):
+                    s3_key = f"{analysis_base_dir}{session_save_path}{filename}"
+                    if s3_handler.upload_file_obj(buffer, s3_key):
                         self.logger.info(f"Analyse-Datei auf S3 unter {s3_key} gespeichert.")
                     else:
                         self.logger.error(f"Fehler beim Speichern von {s3_key} auf S3.")
                 else:
-                    os.makedirs(analysis_dir, exist_ok=True)
-                    local_path = os.path.join(analysis_dir, filename)
+                    local_path = os.path.join(analysis_base_dir, session_save_path.replace('/', os.sep), filename)
+                    os.makedirs(os.path.dirname(local_path), exist_ok=True)
                     mode = 'wb' if is_bytes else 'w'
                     encoding = None if is_bytes else 'utf-8'
                     with open(local_path, mode, encoding=encoding) as f:
@@ -259,130 +289,146 @@ class WSBDataAnalyzer:
 
             # Speichere kombinierten DataFrame
             if self.combined_df is not None and not self.combined_df.empty:
-                _save(self.combined_df.to_csv(index=False), f"combined_analysis_{timestamp}.csv")
+                _save(self.combined_df.to_csv(index=False), "combined_analysis.csv")
                 
-                # Speichere Top-Symbole
                 top_symbols = self.get_top_symbols_overall(50)
                 if not top_symbols.empty:
-                    _save(top_symbols.to_csv(index=False), f"top_symbols_{timestamp}.csv")
+                    _save(top_symbols.to_csv(index=False), "top_symbols.csv")
                     
-                # Speichere Trending-Symbole
                 trending = self.get_trending_symbols(7, 20)
                 if not trending.empty:
-                    _save(trending.to_csv(index=False), f"trending_symbols_{timestamp}.csv")
+                    _save(trending.to_csv(index=False), "trending_symbols.csv")
                     
-            # Speichere Summary Report
             summary = self.create_summary_report()
             if summary:
                 summary_content = json.dumps(summary, indent=2, ensure_ascii=False, default=str)
-                _save(summary_content, f"summary_report_{timestamp}.json")
+                _save(summary_content, "summary_report.json")
                 
             return True
             
         except Exception as e:
             self.logger.error(f"Fehler beim Speichern der Analyseergebnisse: {e}")
             return False
+
+    def _upload_log_file(self):
+        """Lädt die Log-Datei für die Analyse-Session nach S3 hoch."""
+        if STORAGE_CONFIG['type'] != 's3':
+            return
+        if not self.log_file_path or not os.path.exists(self.log_file_path):
+            self.logger.error("Analyse-Log-Datei nicht gefunden zum Hochladen.")
+            return
+        if not self.session_path_for_saving:
+            self.logger.error("Kein S3-Session-Pfad zum Hochladen der Log-Datei vorhanden.")
+            return
+
+        try:
+            # Fährt alle Logger herunter und schließt die Dateien sicher
+            logging.shutdown()
+
+            with open(self.log_file_path, 'rb') as log_file_obj:
+                log_s3_key = f"{DATA_PATHS['analysis_dir']}{self.session_path_for_saving}analyzer.log"
+                # Da der Logger heruntergefahren ist, verwenden wir print
+                print(f"Lade Analyse-Log-Datei nach {log_s3_key} hoch...")
+                s3_handler.upload_file_obj(log_file_obj, log_s3_key)
+            
+            os.remove(self.log_file_path)
+            print(f"Lokale Analyse-Log-Datei {self.log_file_path} gelöscht.")
+
+        except Exception as e:
+            print(f"Fehler beim Hochladen der Analyse-Log-Datei: {e}")
+        finally:
+            # Re-initialisiere das Logging für den Fall, dass das Objekt weiterverwendet wird
+            self.setup_logging(session_path=self.session_path_for_saving)
             
     def create_visualizations(self, save_plots=True):
-        """Erstellt Visualisierungen der Daten"""
+        """Erstellt Visualisierungen der Daten und speichert sie im Session-Ordner."""
         if self.combined_df is None or self.combined_df.empty:
             self.logger.warning("No data available for visualization")
             return False
             
         try:
-            # Setze Stil für Plots
             plt.style.use('default')
             sns.set_palette("husl")
-            
-            # 1. Top 15 Symbole (Balkendiagramm)
             fig, axes = plt.subplots(2, 2, figsize=(15, 12))
             fig.suptitle('WSB Stock Mentions Analysis', fontsize=16, fontweight='bold')
             
-            # Top Symbole
             top_symbols = self.get_top_symbols_overall(15)
             if not top_symbols.empty:
                 axes[0, 0].barh(top_symbols['Symbol'], top_symbols['Mentions'])
                 axes[0, 0].set_title('Top 15 Most Mentioned Stocks')
                 axes[0, 0].set_xlabel('Total Mentions')
                 
-            # Mentions über Zeit (Timeline)
-            daily_mentions = (self.combined_df.groupby('Date')['Mentions']
-                            .sum()
-                            .reset_index())
+            daily_mentions = self.combined_df.groupby('Date')['Mentions'].sum().reset_index()
             if not daily_mentions.empty:
                 axes[0, 1].plot(daily_mentions['Date'], daily_mentions['Mentions'], marker='o')
                 axes[0, 1].set_title('Daily Mention Trends')
-                axes[0, 1].set_xlabel('Date')
-                axes[0, 1].set_ylabel('Total Mentions')
                 axes[0, 1].tick_params(axis='x', rotation=45)
                 
-            # Top 10 Symbole Heatmap über Zeit
             top_10_symbols = self.get_top_symbols_overall(10)['Symbol'].tolist()
             if top_10_symbols:
-                heatmap_data = (self.combined_df[self.combined_df['Symbol'].isin(top_10_symbols)]
-                              .pivot_table(index='Symbol', columns='Date', values='Mentions', fill_value=0))
-                
+                heatmap_data = self.combined_df[self.combined_df['Symbol'].isin(top_10_symbols)].pivot_table(index='Symbol', columns='Date', values='Mentions', fill_value=0)
                 if not heatmap_data.empty:
                     sns.heatmap(heatmap_data, ax=axes[1, 0], cmap='YlOrRd', cbar_kws={'label': 'Mentions'})
                     axes[1, 0].set_title('Top 10 Stocks Mention Heatmap')
-                    axes[1, 0].set_xlabel('Date')
-                    
-            # Verteilung der Mentions
+            
             mention_dist = self.combined_df['Mentions'].value_counts().head(20)
             if not mention_dist.empty:
                 axes[1, 1].bar(range(len(mention_dist)), mention_dist.values)
                 axes[1, 1].set_title('Distribution of Mention Counts')
-                axes[1, 1].set_xlabel('Mention Count')
-                axes[1, 1].set_ylabel('Frequency')
                 
             plt.tight_layout()
             
             if save_plots:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                plot_filename = f"wsb_analysis_plots_{timestamp}.png"
+                if not self.session_path_for_saving:
+                    self.logger.error("Kein Session-Pfad zum Speichern der Visualisierung vorhanden.")
+                    return False
                 
-                if STORAGE_CONFIG['type'] == 's3' and upload_file_obj:
+                plot_filename = "wsb_analysis_plots.png"
+                analysis_base_dir = DATA_PATHS['analysis_dir']
+                session_save_path = self.session_path_for_saving
+
+                if STORAGE_CONFIG['type'] == 's3':
                     img_data = io.BytesIO()
                     plt.savefig(img_data, format='png', dpi=300, bbox_inches='tight')
                     img_data.seek(0)
-                    s3_key = f"{DATA_PATHS['analysis_dir']}{plot_filename}"
-                    if upload_file_obj(img_data, s3_key):
+                    s3_key = f"{analysis_base_dir}{session_save_path}{plot_filename}"
+                    if s3_handler.upload_file_obj(img_data, s3_key):
                         self.logger.info(f"Plot auf S3 unter {s3_key} gespeichert.")
                     else:
                         self.logger.error(f"Fehler beim Speichern des Plots auf S3.")
                 else:
-                    os.makedirs(DATA_PATHS['analysis_dir'], exist_ok=True)
-                    local_plot_path = os.path.join(DATA_PATHS['analysis_dir'], plot_filename)
+                    local_plot_path = os.path.join(analysis_base_dir, session_save_path.replace('/', os.sep), plot_filename)
+                    os.makedirs(os.path.dirname(local_plot_path), exist_ok=True)
                     plt.savefig(local_plot_path, dpi=300, bbox_inches='tight')
                     self.logger.info(f"Plot lokal unter {local_plot_path} gespeichert.")
-                
+            
             return fig
             
         except Exception as e:
             self.logger.error(f"Error creating visualizations: {e}")
             return False
             
-    def run_full_analysis(self):
-        """Führt eine vollständige Analyse durch"""
-        self.logger.info("Starting full analysis...")
+    def run_full_analysis(self, session_path=None):
+        """Führt eine vollständige Analyse für eine bestimmte Session durch."""
+        self.setup_logging(session_path=session_path)
+        self.logger.info(f"Starting full analysis for session: {session_path or 'latest'}")
         
-        # Lade alle Ergebnisse
-        if not self.load_all_results():
-            self.logger.error("Failed to load results")
+        if not self.load_all_results(session_path=session_path):
+            self.logger.error("Failed to load results for analysis")
             return False
             
-        # Erstelle kombinierten DataFrame
         if not self.create_combined_dataframe():
             self.logger.error("Failed to create combined dataframe")
             return False
             
-        # Speichere Analyseergebnisse
         if not self.save_analysis_results():
             self.logger.error("Failed to save analysis results")
             return False
             
-        # Erstelle Visualisierungen
         self.create_visualizations()
+        
+        # Lade die Log-Datei hoch, nachdem alles andere fertig ist
+        self._upload_log_file()
         
         self.logger.info("Full analysis completed successfully")
         return True

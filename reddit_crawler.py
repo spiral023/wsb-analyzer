@@ -13,13 +13,7 @@ from datetime import datetime, timezone
 from collections import defaultdict, Counter
 import logging
 from config import REDDIT_CONFIG, CRAWLER_CONFIG, DATA_PATHS, STORAGE_CONFIG
-
-if STORAGE_CONFIG['type'] == 's3':
-    try:
-        from s3_handler import upload_file_obj
-    except ImportError:
-        print("s3_handler.py nicht gefunden. S3-Upload wird nicht funktionieren.")
-        upload_file_obj = None
+import s3_handler
 
 class WSBStockCrawler:
     def __init__(self):
@@ -28,17 +22,28 @@ class WSBStockCrawler:
         self.stock_symbols = set()
         self.excluded_words = set(CRAWLER_CONFIG['excluded_words'])
         self.results = defaultdict(int)
+        self.session_timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        self.log_file_path = None
+        self.session_path = None
         self.setup_logging()
         self.load_stock_symbols()
         
     def setup_logging(self):
-        """Konfiguriert das Logging"""
+        """Konfiguriert das Logging für die aktuelle Session."""
         os.makedirs(DATA_PATHS['logs_dir'], exist_ok=True)
+        self.log_file_path = f"{DATA_PATHS['logs_dir']}/crawler_{self.session_timestamp}.log"
+        
+        # Entferne bestehende Handler, um Doppel-Logging zu vermeiden
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
+            handler.close()
+
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
             handlers=[
-                logging.FileHandler(f"{DATA_PATHS['logs_dir']}/crawler.log"),
+                logging.FileHandler(self.log_file_path),
                 logging.StreamHandler()
             ]
         )
@@ -155,16 +160,47 @@ class WSBStockCrawler:
             self.logger.error(f"Error during crawling: {e}")
             return False
             
+    def _upload_log_file(self, session_path):
+        """Lädt die Log-Datei für die aktuelle Session nach S3 hoch."""
+        if not self.log_file_path or not os.path.exists(self.log_file_path):
+            self.logger.error("Log-Datei nicht gefunden zum Hochladen.")
+            return
+
+        try:
+            # Fährt alle Logger herunter und schließt die Dateien sicher
+            logging.shutdown()
+            
+            with open(self.log_file_path, 'rb') as log_file_obj:
+                log_s3_key = f"{DATA_PATHS['results_dir']}{session_path}crawler.log"
+                self.logger.info(f"Lade Log-Datei nach {log_s3_key} hoch...")
+                s3_handler.upload_file_obj(log_file_obj, log_s3_key)
+            
+            # Lokale Log-Datei nach dem Hochladen löschen
+            os.remove(self.log_file_path)
+            self.logger.info(f"Lokale Log-Datei {self.log_file_path} gelöscht.")
+
+        except Exception as e:
+            # Da der Logger heruntergefahren wurde, verwenden wir print für den Fehler
+            print(f"Fehler beim Hochladen der Log-Datei: {e}")
+        finally:
+            # Re-initialisiere das Logging für den Fall, dass das Objekt weiterverwendet wird
+            self.setup_logging()
+
     def save_results(self):
         """Speichert die Crawling-Ergebnisse entweder lokal oder auf S3."""
         try:
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            # Verwende den im Konstruktor erstellten Zeitstempel für Konsistenz
+            now = datetime.strptime(self.session_timestamp, "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
+            session_date = now.strftime("%Y-%m-%d")
+            session_time = now.strftime("%H%M%S")
+            self.session_path = f"{session_date}/{session_time}/"
+            
             sorted_results = dict(sorted(self.results.items(), key=lambda x: x[1], reverse=True))
 
             # JSON-Daten vorbereiten
             result_data = {
-                'timestamp': timestamp,
-                'crawl_date': datetime.now(timezone.utc).isoformat(),
+                'timestamp': self.session_timestamp,
+                'crawl_date': now.isoformat(),
                 'total_symbols_found': len(sorted_results),
                 'total_mentions': sum(sorted_results.values()),
                 'subreddit': CRAWLER_CONFIG['subreddit'],
@@ -174,39 +210,41 @@ class WSBStockCrawler:
             
             # CSV-Daten vorbereiten
             df = pd.DataFrame(list(sorted_results.items()), columns=['Symbol', 'Mentions'])
-            df['Timestamp'] = timestamp
-            df['Date'] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            df['Timestamp'] = f"{session_date.replace('-', '')}_{session_time}"
+            df['Date'] = now.strftime("%Y-%m-%d %H:%M:%S")
             csv_content = df.to_csv(index=False)
 
-            json_filename = f"wsb_mentions_{timestamp}.json"
-            csv_filename = f"wsb_mentions_{timestamp}.csv"
+            json_filename = "wsb_mentions.json"
+            csv_filename = "wsb_mentions.csv"
 
-            if STORAGE_CONFIG['type'] == 's3' and upload_file_obj:
-                # Auf S3 speichern
-                self.logger.info("Speichere Ergebnisse auf S3...")
-                json_obj_name = f"{DATA_PATHS['results_dir']}{json_filename}"
-                csv_obj_name = f"{DATA_PATHS['results_dir']}{csv_filename}"
+            if STORAGE_CONFIG['type'] == 's3':
+                self.logger.info(f"Speichere Ergebnisse auf S3 in Session-Pfad: {self.session_path}")
+                base_path = DATA_PATHS['results_dir']
+                json_obj_name = f"{base_path}{self.session_path}{json_filename}"
+                csv_obj_name = f"{base_path}{self.session_path}{csv_filename}"
 
-                # JSON hochladen
                 json_buffer = io.BytesIO(json_content.encode('utf-8'))
-                upload_file_obj(json_buffer, json_obj_name)
-
-                # CSV hochladen
+                s3_handler.upload_file_obj(json_buffer, json_obj_name)
                 csv_buffer = io.BytesIO(csv_content.encode('utf-8'))
-                upload_file_obj(csv_buffer, csv_obj_name)
+                s3_handler.upload_file_obj(csv_buffer, csv_obj_name)
                 
                 self.logger.info(f"Ergebnisse auf S3 unter {json_obj_name} und {csv_obj_name} gespeichert")
+                
+                # Lade die Log-Datei hoch
+                self._upload_log_file(self.session_path)
+
                 return json_obj_name, csv_obj_name
             else:
-                # Lokal speichern (Fallback)
-                self.logger.info("Speichere Ergebnisse lokal...")
-                os.makedirs(DATA_PATHS['results_dir'], exist_ok=True)
+                # Lokal speichern
+                local_session_dir = os.path.join(DATA_PATHS['results_dir'], self.session_path.replace('/', os.sep))
+                self.logger.info(f"Speichere Ergebnisse lokal in: {local_session_dir}")
+                os.makedirs(local_session_dir, exist_ok=True)
                 
-                local_json_path = os.path.join(DATA_PATHS['results_dir'], json_filename)
+                local_json_path = os.path.join(local_session_dir, json_filename)
                 with open(local_json_path, 'w', encoding='utf-8') as f:
                     f.write(json_content)
 
-                local_csv_path = os.path.join(DATA_PATHS['results_dir'], csv_filename)
+                local_csv_path = os.path.join(local_session_dir, csv_filename)
                 with open(local_csv_path, 'w', encoding='utf-8') as f:
                     f.write(csv_content)
                 

@@ -15,6 +15,7 @@ import time
 import pandas as pd
 import os
 import io
+import glob
 
 try:
     import s3_handler
@@ -54,6 +55,8 @@ if 'analysis_summary' not in st.session_state:
     st.session_state.analysis_summary = None
 if 'analysis_plots' not in st.session_state:
     st.session_state.analysis_plots = None
+if 'selected_session' not in st.session_state:
+    st.session_state.selected_session = None
 
 st.title("📈 WSB Stock Analyzer")
 st.markdown("Eine moderne Web-Anwendung zur Analyse von Reddit's r/wallstreetbets.")
@@ -62,7 +65,7 @@ st.markdown("Eine moderne Web-Anwendung zur Analyse von Reddit's r/wallstreetbet
 st.sidebar.header("Konfiguration")
 
 # --- Reddit API Konfiguration ---
-with st.sidebar.expander("Reddit API Credentials", expanded=True):
+with st.sidebar.expander("Reddit API Credentials", expanded=False):
     client_id = st.text_input(
         "Client ID", 
         value=localS.getItem("client_id") or "", 
@@ -160,6 +163,21 @@ with st.sidebar.expander("Speicher-Konfiguration"):
              time.sleep(1)
              st.rerun()
 
+# --- Session-Auswahl für S3 ---
+if STORAGE_CONFIG['type'] == 's3' and s3_handler:
+    st.sidebar.subheader("S3 Session-Auswahl")
+    # Wir suchen in 'data/results/', da dort die primären Session-Ordner erstellt werden
+    sessions = s3_handler.list_sessions(base_prefix=DATA_PATHS['results_dir'])
+    if sessions:
+        st.session_state.selected_session = st.sidebar.selectbox(
+            "Wähle eine Session",
+            options=sessions,
+            index=0,
+            key="session_selector",
+            help="Zeigt Ordner im Format YYYY-MM-DD/HHMMSS/"
+        )
+    else:
+        st.sidebar.info("Keine S3-Sessions gefunden.")
 
 # --- Crawler-Einstellungen ---
 st.sidebar.subheader("Crawler-Einstellungen")
@@ -181,62 +199,59 @@ with tab_dashboard:
         localS.getItem("password")
     ])
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Crawling starten", disabled=st.session_state.crawling_in_progress or not api_configured):
-            st.session_state.crawling_in_progress = True
-            st.rerun()
-
-    with col2:
-        if st.button("Analyse starten", disabled=st.session_state.analysis_in_progress or not st.session_state.crawl_results):
-            st.session_state.analysis_in_progress = True
-            st.rerun()
+    if st.button("Crawlen und Analysieren", disabled=st.session_state.crawling_in_progress or not api_configured):
+        st.session_state.crawling_in_progress = True
+        st.rerun()
 
     if not api_configured:
         st.warning("Bitte geben Sie Ihre API-Daten in der Seitenleiste ein und klicken Sie auf 'Speichern & Testen'.")
 
-    # Crawling Prozess
+    # Gekoppelter Crawling- und Analyse-Prozess
     if st.session_state.crawling_in_progress:
-        st.header("Crawling...")
+        st.header("Crawling & Analyse...")
         progress_bar = st.progress(0)
         status_text = st.empty()
         
-        # Konfiguration ist bereits am Anfang des Skripts geladen
-        # Setze nur die Crawler-spezifischen Laufzeit-Parameter
+        # --- Crawling-Phase ---
+        status_text.text("Phase 1: Crawling wird gestartet...")
         CRAWLER_CONFIG['post_limit'] = post_limit
         CRAWLER_CONFIG['comment_limit'] = comment_limit
-
         crawler = WSBStockCrawler()
         
         def progress_callback(progress, message):
-            progress_bar.progress(int(progress))
-            status_text.text(message)
+            # Skaliere den Crawling-Fortschritt auf 50% der Gesamtleiste
+            progress_bar.progress(int(progress / 2))
+            status_text.text(f"Phase 1: Crawling... ({message})")
 
-        if crawler.crawl_subreddit(progress_callback):
+        crawl_success = crawler.crawl_subreddit(progress_callback)
+        
+        if crawl_success:
             st.session_state.crawl_results = crawler.get_crawl_summary()
+            status_text.text("Phase 1: Crawling abgeschlossen. Speichere Ergebnisse...")
             crawler.save_results()
             st.success("Crawling erfolgreich abgeschlossen!")
+            
+            # --- Analyse-Phase ---
+            progress_bar.progress(50)
+            status_text.text("Phase 2: Analyse wird gestartet...")
+            
+            # Holen des gerade erstellten Session-Pfads
+            session_to_analyze = crawler.session_path
+            
+            with st.spinner(f"Analysiere Daten für neue Session '{session_to_analyze}'..."):
+                analyzer = WSBDataAnalyzer()
+                if analyzer.run_full_analysis(session_path=session_to_analyze):
+                    st.session_state.analysis_summary = analyzer.create_summary_report()
+                    st.session_state.analysis_plots = analyzer.create_visualizations(save_plots=True)
+                    progress_bar.progress(100)
+                    st.success("Analyse erfolgreich abgeschlossen!")
+                else:
+                    st.error("Analyse fehlgeschlagen. Überprüfen Sie die Logs.")
         else:
             st.error("Crawling fehlgeschlagen. Überprüfen Sie die Logs.")
         
         st.session_state.crawling_in_progress = False
-        time.sleep(2)
-        st.rerun()
-
-    # Analyse Prozess
-    if st.session_state.analysis_in_progress:
-        st.header("Analyse...")
-        with st.spinner("Daten werden analysiert..."):
-            analyzer = WSBDataAnalyzer()
-            if analyzer.run_full_analysis():
-                st.session_state.analysis_summary = analyzer.create_summary_report()
-                st.session_state.analysis_plots = analyzer.create_visualizations(save_plots=True)
-                st.success("Analyse erfolgreich abgeschlossen!")
-            else:
-                st.error("Analyse fehlgeschlagen. Überprüfen Sie die Logs.")
-        
-        st.session_state.analysis_in_progress = False
-        time.sleep(2)
+        time.sleep(3)
         st.rerun()
 
 with tab_results:
@@ -245,28 +260,27 @@ with tab_results:
         st.subheader("Letzter Crawl-Zusammenfassung")
         st.json(st.session_state.crawl_results)
 
-    st.subheader("Neueste Erwähnungen")
-    # Lade die neueste CSV-Datei von lokal oder S3
+    st.subheader("Erwähnungen der ausgewählten Session")
     try:
-        latest_file_content = None
+        file_content = None
         if STORAGE_CONFIG['type'] == 's3' and s3_handler:
-            st.info("Lade neueste Ergebnisse von S3...")
-            s3_files = s3_handler.list_files(prefix=DATA_PATHS['results_dir'])
-            if s3_files:
-                csv_files = [f for f in s3_files if f.endswith('.csv')]
-                if csv_files:
-                    latest_file_key = max(csv_files) # Sortiert nach Name (Zeitstempel)
-                    latest_file_content = s3_handler.get_file_content(latest_file_key)
+            if st.session_state.selected_session:
+                st.info(f"Lade Ergebnisse für Session {st.session_state.selected_session} von S3...")
+                file_key = f"{DATA_PATHS['results_dir']}{st.session_state.selected_session}wsb_mentions.csv"
+                file_content = s3_handler.get_file_content(file_key)
+            else:
+                st.info("Bitte wählen Sie eine S3-Session in der Seitenleiste aus.")
         else:
             st.info("Lade neueste Ergebnisse vom lokalen Speicher...")
-            list_of_files = glob.glob(f"{DATA_PATHS['results_dir']}/*.csv")
+            # Lokale Logik: Finde die neueste Datei im verschachtelten Verzeichnis
+            list_of_files = glob.glob(f"{DATA_PATHS['results_dir']}/**/wsb_mentions.csv", recursive=True)
             if list_of_files:
                 latest_file_path = max(list_of_files, key=os.path.getctime)
                 with open(latest_file_path, 'r', encoding='utf-8') as f:
-                    latest_file_content = f.read()
+                    file_content = f.read()
 
-        if latest_file_content:
-            df = pd.read_csv(io.StringIO(latest_file_content))
+        if file_content:
+            df = pd.read_csv(io.StringIO(file_content))
             st.dataframe(df)
         else:
             st.info("Noch keine Ergebnisdateien gefunden.")
@@ -276,27 +290,28 @@ with tab_results:
 
 with tab_visuals:
     st.header("Visualisierungen")
-    st.info("Die neueste Analyse-Visualisierung wird geladen...")
-
+    
     try:
-        latest_plot = None
+        plot_path = None
         if STORAGE_CONFIG['type'] == 's3' and s3_handler:
-            s3_files = s3_handler.list_files(prefix=DATA_PATHS['analysis_dir'])
-            if s3_files:
-                plot_files = [f for f in s3_files if f.endswith('.png')]
-                if plot_files:
-                    latest_plot_key = max(plot_files)
-                    # Temporär herunterladen zum Anzeigen
-                    temp_plot_path = "temp_plot.png"
-                    if s3_handler.download_file(latest_plot_key, temp_plot_path):
-                        latest_plot = temp_plot_path
+            if st.session_state.selected_session:
+                st.info(f"Lade Visualisierung für Session {st.session_state.selected_session} von S3...")
+                plot_key = f"{DATA_PATHS['analysis_dir']}{st.session_state.selected_session}wsb_analysis_plots.png"
+                temp_plot_path = "temp_plot.png"
+                if s3_handler.download_file(plot_key, temp_plot_path):
+                    plot_path = temp_plot_path
+                else:
+                    st.warning(f"Visualisierung für Session {st.session_state.selected_session} nicht gefunden.")
+            else:
+                st.info("Bitte wählen Sie eine S3-Session in der Seitenleiste aus.")
         else:
-            list_of_files = glob.glob(f"{DATA_PATHS['analysis_dir']}/*.png")
+            st.info("Lade neueste Visualisierung vom lokalen Speicher...")
+            list_of_files = glob.glob(f"{DATA_PATHS['analysis_dir']}/**/wsb_analysis_plots.png", recursive=True)
             if list_of_files:
-                latest_plot = max(list_of_files, key=os.path.getctime)
+                plot_path = max(list_of_files, key=os.path.getctime)
 
-        if latest_plot:
-            st.image(latest_plot)
+        if plot_path:
+            st.image(plot_path)
             if os.path.exists("temp_plot.png"):
                 os.remove("temp_plot.png") # Aufräumen
         else:
@@ -305,13 +320,44 @@ with tab_visuals:
         st.error(f"Fehler beim Laden der Visualisierung: {e}")
 
 with tab_logs:
-    st.header("Logs")
-    log_expander = st.expander("Logs anzeigen")
-    with log_expander:
-        try:
-            with open("logs/crawler.log", "r") as f:
-                st.text(f.read())
-            with open("logs/analyzer.log", "r") as f:
-                st.text(f.read())
-        except FileNotFoundError:
-            st.text("Noch keine Logs vorhanden.")
+    st.header("Logs der ausgewählten Session")
+
+    if st.button("Logs laden"):
+        session = st.session_state.get('selected_session')
+        if not session:
+            st.warning("Bitte wählen Sie zuerst eine Session in der Seitenleiste aus.")
+        else:
+            st.info(f"Lade Logs für Session: {session}")
+            
+            log_contents = {}
+            
+            if STORAGE_CONFIG['type'] == 's3' and s3_handler:
+                # Lade von S3
+                crawler_log_key = f"{DATA_PATHS['results_dir']}{session}crawler.log"
+                analyzer_log_key = f"{DATA_PATHS['analysis_dir']}{session}analyzer.log"
+                
+                log_contents['crawler'] = s3_handler.get_file_content(crawler_log_key)
+                log_contents['analyzer'] = s3_handler.get_file_content(analyzer_log_key)
+            else:
+                # Lade lokal
+                crawler_log_path = os.path.join(DATA_PATHS['results_dir'], session.replace('/', os.sep), "crawler.log")
+                analyzer_log_path = os.path.join(DATA_PATHS['analysis_dir'], session.replace('/', os.sep), "analyzer.log")
+                
+                try:
+                    with open(crawler_log_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        log_contents['crawler'] = f.read()
+                except FileNotFoundError:
+                    log_contents['crawler'] = "Crawler-Log für diese Session nicht gefunden."
+                
+                try:
+                    with open(analyzer_log_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        log_contents['analyzer'] = f.read()
+                except FileNotFoundError:
+                    log_contents['analyzer'] = "Analyzer-Log für diese Session nicht gefunden."
+
+            # Anzeige der Logs
+            st.subheader("Crawler Log")
+            st.text_area("Crawler Log Content", value=log_contents.get('crawler') or "Kein Inhalt.", height=300)
+            
+            st.subheader("Analyzer Log")
+            st.text_area("Analyzer Log Content", value=log_contents.get('analyzer') or "Kein Inhalt.", height=300)

@@ -196,6 +196,51 @@ def list_files(prefix=''):
         logger.error(f"Ein unerwarteter Fehler ist aufgetreten: {e}")
         return None
 
+def list_sessions(base_prefix):
+    """
+    Listet alle verfügbaren Session-Verzeichnisse unter einem Basis-Präfix auf.
+    Ein Session-Verzeichnis hat das Format 'YYYY-MM-DD/HHMMSS/'.
+    """
+    s3_client = get_s3_client()
+    if not s3_client:
+        return []
+
+    bucket_arn = S3_CONFIG.get('bucket_name')
+    if not bucket_arn:
+        logger.error("S3-Bucket-Name ist nicht konfiguriert.")
+        return []
+    bucket_name = _get_bucket_name_from_arn(bucket_arn)
+
+    sessions = set()
+    
+    # Liste Datum-Ordner (z.B. '2025-07-07/')
+    try:
+        paginator = s3_client.get_paginator('list_objects_v2')
+        date_pages = paginator.paginate(Bucket=bucket_name, Prefix=base_prefix, Delimiter='/')
+        
+        for page in date_pages:
+            if 'CommonPrefixes' in page:
+                for date_prefix in page.get('CommonPrefixes', []):
+                    date_path = date_prefix.get('Prefix')
+                    
+                    # Liste Zeit-Ordner (z.B. '210032/')
+                    time_pages = paginator.paginate(Bucket=bucket_name, Prefix=date_path, Delimiter='/')
+                    for time_page in time_pages:
+                        if 'CommonPrefixes' in time_page:
+                            for time_prefix in time_page.get('CommonPrefixes', []):
+                                full_path = time_prefix.get('Prefix')
+                                # Entferne das Basis-Präfix, um den relativen Session-Pfad zu erhalten
+                                session_path = full_path.replace(base_prefix, '')
+                                sessions.add(session_path)
+
+    except ClientError as e:
+        logger.error(f"Fehler beim Auflisten der S3-Sessions unter '{base_prefix}': {e}")
+        return []
+
+    sorted_sessions = sorted(list(sessions), reverse=True)
+    logger.info(f"{len(sorted_sessions)} eindeutige Sessions gefunden.")
+    return sorted_sessions
+
 def get_file_content(object_name):
     """
     Liest den Inhalt einer Datei aus S3 als String.
@@ -216,7 +261,7 @@ def get_file_content(object_name):
     try:
         logger.info(f"Lese Inhalt von {object_name} aus Bucket {bucket_name}...")
         response = s3_client.get_object(Bucket=bucket_name, Key=object_name)
-        content = response['Body'].read().decode('utf-8')
+        content = response['Body'].read().decode('utf-8', errors='ignore')
         logger.info(f"Inhalt von {object_name} erfolgreich gelesen.")
         return content
     except ClientError as e:
