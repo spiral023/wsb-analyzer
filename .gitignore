@@ -125,3 +125,6 @@ logs/
 # Data files
 data/results/
 data/analysis/
+
+# Streamlit secrets
+secrets.toml
