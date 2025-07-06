@@ -1,0 +1,236 @@
+"""
+Reddit Crawler für WSB Stock Mentions
+Durchsucht r/wallstreetbets nach Aktiensymbolen und zählt deren Häufigkeit
+"""
+
+import praw
+import pandas as pd
+import re
+import json
+import os
+from datetime import datetime, timezone
+from collections import defaultdict, Counter
+import logging
+from config import REDDIT_CONFIG, CRAWLER_CONFIG, DATA_PATHS
+
+class WSBStockCrawler:
+    def __init__(self):
+        """Initialisiert den Reddit Crawler"""
+        self.reddit = None
+        self.stock_symbols = set()
+        self.excluded_words = set(CRAWLER_CONFIG['excluded_words'])
+        self.results = defaultdict(int)
+        self.setup_logging()
+        self.load_stock_symbols()
+        
+    def setup_logging(self):
+        """Konfiguriert das Logging"""
+        os.makedirs(DATA_PATHS['logs_dir'], exist_ok=True)
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler(f"{DATA_PATHS['logs_dir']}/crawler.log"),
+                logging.StreamHandler()
+            ]
+        )
+        self.logger = logging.getLogger(__name__)
+        
+    def load_stock_symbols(self):
+        """Lädt die Aktiensymbole aus der CSV-Datei"""
+        try:
+            df = pd.read_csv(DATA_PATHS['stock_symbols'])
+            self.stock_symbols = set(df['Symbol'].str.upper())
+            self.logger.info(f"Loaded {len(self.stock_symbols)} stock symbols")
+        except FileNotFoundError:
+            self.logger.error(f"Stock symbols file not found: {DATA_PATHS['stock_symbols']}")
+            raise
+        except Exception as e:
+            self.logger.error(f"Error loading stock symbols: {e}")
+            raise
+            
+    def connect_to_reddit(self):
+        """Stellt Verbindung zur Reddit API her"""
+        try:
+            self.reddit = praw.Reddit(
+                client_id=REDDIT_CONFIG['client_id'],
+                client_secret=REDDIT_CONFIG['client_secret'],
+                user_agent=REDDIT_CONFIG['user_agent'],
+                username=REDDIT_CONFIG['username'],
+                password=REDDIT_CONFIG['password']
+            )
+            # Test der Verbindung
+            self.reddit.user.me()
+            self.logger.info("Successfully connected to Reddit API")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to connect to Reddit API: {e}")
+            return False
+            
+    def extract_symbols_from_text(self, text):
+        """Extrahiert Aktiensymbole aus einem Text"""
+        if not text:
+            return []
+            
+        # Bereinige den Text und konvertiere zu Großbuchstaben
+        text = text.upper()
+        
+        # Finde alle Wörter, die potentielle Aktiensymbole sein könnten
+        # Suche nach Wörtern mit 1-5 Buchstaben, die nicht in excluded_words sind
+        pattern = r'\b[A-Z]{1,5}\b'
+        potential_symbols = re.findall(pattern, text)
+        
+        # Filtere nach bekannten Aktiensymbolen und schließe ausgeschlossene Wörter aus
+        found_symbols = []
+        for symbol in potential_symbols:
+            if (symbol in self.stock_symbols and 
+                symbol not in self.excluded_words and
+                len(symbol) >= CRAWLER_CONFIG['min_symbol_length'] and
+                len(symbol) <= CRAWLER_CONFIG['max_symbol_length']):
+                found_symbols.append(symbol)
+                
+        return found_symbols
+        
+    def crawl_subreddit(self, progress_callback=None):
+        """Crawlt das WSB Subreddit nach Aktiensymbolen"""
+        if not self.reddit:
+            if not self.connect_to_reddit():
+                return False
+                
+        try:
+            subreddit = self.reddit.subreddit(CRAWLER_CONFIG['subreddit'])
+            self.results = defaultdict(int)
+            
+            # Crawle Hot Posts
+            posts_processed = 0
+            total_posts = CRAWLER_CONFIG['post_limit']
+            
+            self.logger.info(f"Starting to crawl r/{CRAWLER_CONFIG['subreddit']}")
+            
+            for post in subreddit.hot(limit=CRAWLER_CONFIG['post_limit']):
+                # Extrahiere Symbole aus Titel und Text des Posts
+                title_symbols = self.extract_symbols_from_text(post.title)
+                selftext_symbols = self.extract_symbols_from_text(post.selftext)
+                
+                # Zähle die gefundenen Symbole
+                for symbol in title_symbols + selftext_symbols:
+                    self.results[symbol] += 1
+                    
+                # Crawle Kommentare
+                try:
+                    post.comments.replace_more(limit=0)  # Entferne "more comments"
+                    comments_processed = 0
+                    
+                    for comment in post.comments.list()[:CRAWLER_CONFIG['comment_limit']]:
+                        if hasattr(comment, 'body'):
+                            comment_symbols = self.extract_symbols_from_text(comment.body)
+                            for symbol in comment_symbols:
+                                self.results[symbol] += 1
+                            comments_processed += 1
+                            
+                except Exception as e:
+                    self.logger.warning(f"Error processing comments for post {post.id}: {e}")
+                    
+                posts_processed += 1
+                
+                # Update Progress
+                if progress_callback:
+                    progress = (posts_processed / total_posts) * 100
+                    progress_callback(progress, f"Processed {posts_processed}/{total_posts} posts")
+                    
+                self.logger.info(f"Processed post {posts_processed}/{total_posts}: {post.title[:50]}...")
+                
+            self.logger.info(f"Crawling completed. Found {len(self.results)} unique symbols")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error during crawling: {e}")
+            return False
+            
+    def save_results(self):
+        """Speichert die Crawling-Ergebnisse"""
+        try:
+            # Erstelle Verzeichnisse falls sie nicht existieren
+            os.makedirs(DATA_PATHS['results_dir'], exist_ok=True)
+            
+            # Erstelle Zeitstempel für den Dateinamen
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            
+            # Sortiere Ergebnisse nach Häufigkeit
+            sorted_results = dict(sorted(self.results.items(), key=lambda x: x[1], reverse=True))
+            
+            # Speichere als JSON
+            json_filename = f"{DATA_PATHS['results_dir']}/wsb_mentions_{timestamp}.json"
+            result_data = {
+                'timestamp': timestamp,
+                'crawl_date': datetime.now(timezone.utc).isoformat(),
+                'total_symbols_found': len(sorted_results),
+                'total_mentions': sum(sorted_results.values()),
+                'subreddit': CRAWLER_CONFIG['subreddit'],
+                'results': sorted_results
+            }
+            
+            with open(json_filename, 'w', encoding='utf-8') as f:
+                json.dump(result_data, f, indent=2, ensure_ascii=False)
+                
+            # Speichere auch als CSV für einfache Analyse
+            csv_filename = f"{DATA_PATHS['results_dir']}/wsb_mentions_{timestamp}.csv"
+            df = pd.DataFrame(list(sorted_results.items()), columns=['Symbol', 'Mentions'])
+            df['Timestamp'] = timestamp
+            df['Date'] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            df.to_csv(csv_filename, index=False)
+            
+            self.logger.info(f"Results saved to {json_filename} and {csv_filename}")
+            return json_filename, csv_filename
+            
+        except Exception as e:
+            self.logger.error(f"Error saving results: {e}")
+            return None, None
+            
+    def get_top_mentions(self, limit=20):
+        """Gibt die Top-Erwähnungen zurück"""
+        if not self.results:
+            return []
+            
+        sorted_results = sorted(self.results.items(), key=lambda x: x[1], reverse=True)
+        return sorted_results[:limit]
+        
+    def get_crawl_summary(self):
+        """Gibt eine Zusammenfassung des Crawling-Laufs zurück"""
+        if not self.results:
+            return None
+            
+        total_mentions = sum(self.results.values())
+        unique_symbols = len(self.results)
+        top_symbol = max(self.results.items(), key=lambda x: x[1]) if self.results else None
+        
+        return {
+            'total_mentions': total_mentions,
+            'unique_symbols': unique_symbols,
+            'top_symbol': top_symbol,
+            'crawl_time': datetime.now(timezone.utc).isoformat()
+        }
+
+if __name__ == "__main__":
+    # Test des Crawlers
+    crawler = WSBStockCrawler()
+    
+    if crawler.connect_to_reddit():
+        print("Starting crawl...")
+        if crawler.crawl_subreddit():
+            print("Crawl completed successfully!")
+            
+            # Zeige Top-Ergebnisse
+            top_mentions = crawler.get_top_mentions(10)
+            print("\nTop 10 Mentions:")
+            for symbol, count in top_mentions:
+                print(f"{symbol}: {count}")
+                
+            # Speichere Ergebnisse
+            json_file, csv_file = crawler.save_results()
+            if json_file:
+                print(f"\nResults saved to: {json_file}")
+        else:
+            print("Crawl failed!")
+    else:
+        print("Failed to connect to Reddit API!")

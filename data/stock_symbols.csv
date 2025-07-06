@@ -1,0 +1,212 @@
+Symbol,Company,Exchange,Sector
+AAPL,Apple Inc.,NASDAQ,Technology
+MSFT,Microsoft Corporation,NASDAQ,Technology
+GOOGL,Alphabet Inc.,NASDAQ,Technology
+AMZN,Amazon.com Inc.,NASDAQ,Consumer Discretionary
+TSLA,Tesla Inc.,NASDAQ,Consumer Discretionary
+META,Meta Platforms Inc.,NASDAQ,Technology
+NVDA,NVIDIA Corporation,NASDAQ,Technology
+BRK.B,Berkshire Hathaway Inc.,NYSE,Financial Services
+UNH,UnitedHealth Group Incorporated,NYSE,Healthcare
+JNJ,Johnson & Johnson,NYSE,Healthcare
+JPM,JPMorgan Chase & Co.,NYSE,Financial Services
+V,Visa Inc.,NYSE,Financial Services
+PG,Procter & Gamble Company,NYSE,Consumer Staples
+HD,Home Depot Inc.,NYSE,Consumer Discretionary
+MA,Mastercard Incorporated,NYSE,Financial Services
+BAC,Bank of America Corporation,NYSE,Financial Services
+ABBV,AbbVie Inc.,NYSE,Healthcare
+PFE,Pfizer Inc.,NYSE,Healthcare
+KO,Coca-Cola Company,NYSE,Consumer Staples
+AVGO,Broadcom Inc.,NASDAQ,Technology
+PEP,PepsiCo Inc.,NASDAQ,Consumer Staples
+TMO,Thermo Fisher Scientific Inc.,NYSE,Healthcare
+COST,Costco Wholesale Corporation,NASDAQ,Consumer Staples
+DIS,Walt Disney Company,NYSE,Communication Services
+ABT,Abbott Laboratories,NYSE,Healthcare
+ACN,Accenture plc,NYSE,Technology
+VZ,Verizon Communications Inc.,NYSE,Communication Services
+ADBE,Adobe Inc.,NASDAQ,Technology
+DHR,Danaher Corporation,NYSE,Healthcare
+WMT,Walmart Inc.,NYSE,Consumer Staples
+NFLX,Netflix Inc.,NASDAQ,Communication Services
+CRM,Salesforce Inc.,NYSE,Technology
+TXN,Texas Instruments Incorporated,NASDAQ,Technology
+NEE,NextEra Energy Inc.,NYSE,Utilities
+ORCL,Oracle Corporation,NYSE,Technology
+XOM,Exxon Mobil Corporation,NYSE,Energy
+LLY,Eli Lilly and Company,NYSE,Healthcare
+CVX,Chevron Corporation,NYSE,Energy
+QCOM,QUALCOMM Incorporated,NASDAQ,Technology
+UPS,United Parcel Service Inc.,NYSE,Industrials
+PM,Philip Morris International Inc.,NYSE,Consumer Staples
+HON,Honeywell International Inc.,NASDAQ,Industrials
+T,AT&T Inc.,NYSE,Communication Services
+LOW,Lowe's Companies Inc.,NYSE,Consumer Discretionary
+IBM,International Business Machines Corporation,NYSE,Technology
+AMGN,Amgen Inc.,NASDAQ,Healthcare
+SPGI,S&P Global Inc.,NYSE,Financial Services
+GS,Goldman Sachs Group Inc.,NYSE,Financial Services
+CAT,Caterpillar Inc.,NYSE,Industrials
+INTU,Intuit Inc.,NASDAQ,Technology
+ISRG,Intuitive Surgical Inc.,NASDAQ,Healthcare
+BKNG,Booking Holdings Inc.,NASDAQ,Consumer Discretionary
+AMD,Advanced Micro Devices Inc.,NASDAQ,Technology
+TGT,Target Corporation,NYSE,Consumer Discretionary
+AXP,American Express Company,NYSE,Financial Services
+MO,Altria Group Inc.,NYSE,Consumer Staples
+SYK,Stryker Corporation,NYSE,Healthcare
+BLK,BlackRock Inc.,NYSE,Financial Services
+MDLZ,Mondelez International Inc.,NASDAQ,Consumer Staples
+GILD,Gilead Sciences Inc.,NASDAQ,Healthcare
+CVS,CVS Health Corporation,NYSE,Healthcare
+C,Citigroup Inc.,NYSE,Financial Services
+VRTX,Vertex Pharmaceuticals Incorporated,NASDAQ,Healthcare
+MMM,3M Company,NYSE,Industrials
+PLD,Prologis Inc.,NYSE,Real Estate
+ZTS,Zoetis Inc.,NYSE,Healthcare
+CB,Chubb Limited,NYSE,Financial Services
+MU,Micron Technology Inc.,NASDAQ,Technology
+SO,Southern Company,NYSE,Utilities
+NOW,ServiceNow Inc.,NYSE,Technology
+REGN,Regeneron Pharmaceuticals Inc.,NASDAQ,Healthcare
+CI,Cigna Corporation,NYSE,Healthcare
+SHW,Sherwin-Williams Company,NYSE,Materials
+CMG,Chipotle Mexican Grill Inc.,NYSE,Consumer Discretionary
+ICE,Intercontinental Exchange Inc.,NYSE,Financial Services
+DUK,Duke Energy Corporation,NYSE,Utilities
+USB,U.S. Bancorp,NYSE,Financial Services
+WM,Waste Management Inc.,NYSE,Industrials
+CL,Colgate-Palmolive Company,NYSE,Consumer Staples
+EMR,Emerson Electric Co.,NYSE,Industrials
+NSC,Norfolk Southern Corporation,NYSE,Industrials
+ITW,Illinois Tool Works Inc.,NYSE,Industrials
+AON,Aon plc,NYSE,Financial Services
+BSX,Boston Scientific Corporation,NYSE,Healthcare
+FCX,Freeport-McMoRan Inc.,NYSE,Materials
+GD,General Dynamics Corporation,NYSE,Industrials
+FIS,Fidelity National Information Services Inc.,NYSE,Technology
+CSX,CSX Corporation,NASDAQ,Industrials
+TJX,TJX Companies Inc.,NYSE,Consumer Discretionary
+COP,ConocoPhillips,NYSE,Energy
+ECL,Ecolab Inc.,NYSE,Materials
+PNC,PNC Financial Services Group Inc.,NYSE,Financial Services
+WFC,Wells Fargo & Company,NYSE,Financial Services
+PYPL,PayPal Holdings Inc.,NASDAQ,Financial Services
+SCHW,Charles Schwab Corporation,NYSE,Financial Services
+D,Dominion Energy Inc.,NYSE,Utilities
+MCO,Moody's Corporation,NYSE,Financial Services
+ADP,Automatic Data Processing Inc.,NASDAQ,Technology
+TFC,Truist Financial Corporation,NYSE,Financial Services
+GM,General Motors Company,NYSE,Consumer Discretionary
+F,Ford Motor Company,NYSE,Consumer Discretionary
+SNAP,Snap Inc.,NYSE,Communication Services
+UBER,Uber Technologies Inc.,NYSE,Technology
+LYFT,Lyft Inc.,NASDAQ,Technology
+ROKU,Roku Inc.,NASDAQ,Communication Services
+TWTR,Twitter Inc.,NYSE,Communication Services
+SQ,Block Inc.,NYSE,Technology
+SHOP,Shopify Inc.,NYSE,Technology
+ZM,Zoom Video Communications Inc.,NASDAQ,Technology
+DOCU,DocuSign Inc.,NASDAQ,Technology
+CZR,Caesars Entertainment Inc.,NASDAQ,Consumer Discretionary
+DKNG,DraftKings Inc.,NASDAQ,Consumer Discretionary
+PENN,PENN Entertainment Inc.,NASDAQ,Consumer Discretionary
+MGM,MGM Resorts International,NYSE,Consumer Discretionary
+WYNN,Wynn Resorts Limited,NASDAQ,Consumer Discretionary
+LVS,Las Vegas Sands Corp.,NYSE,Consumer Discretionary
+RCL,Royal Caribbean Cruises Ltd.,NYSE,Consumer Discretionary
+CCL,Carnival Corporation,NYSE,Consumer Discretionary
+NCLH,Norwegian Cruise Line Holdings Ltd.,NYSE,Consumer Discretionary
+AAL,American Airlines Group Inc.,NASDAQ,Industrials
+DAL,Delta Air Lines Inc.,NYSE,Industrials
+UAL,United Airlines Holdings Inc.,NASDAQ,Industrials
+LUV,Southwest Airlines Co.,NYSE,Industrials
+JBLU,JetBlue Airways Corporation,NASDAQ,Industrials
+ALK,Alaska Air Group Inc.,NYSE,Industrials
+SAVE,Spirit Airlines Inc.,NYSE,Industrials
+HA,Hawaiian Holdings Inc.,NASDAQ,Industrials
+SKYW,SkyWest Inc.,NASDAQ,Industrials
+MESA,Mesa Air Group Inc.,NASDAQ,Industrials
+AMC,AMC Entertainment Holdings Inc.,NYSE,Communication Services
+GME,GameStop Corp.,NYSE,Consumer Discretionary
+BB,BlackBerry Limited,NYSE,Technology
+NOK,Nokia Corporation,NYSE,Technology
+SNDL,Sundial Growers Inc.,NASDAQ,Healthcare
+TLRY,Tilray Brands Inc.,NASDAQ,Healthcare
+CGC,Canopy Growth Corporation,NASDAQ,Healthcare
+ACB,Aurora Cannabis Inc.,NYSE,Healthcare
+CRON,Cronos Group Inc.,NASDAQ,Healthcare
+HEXO,HEXO Corp.,NYSE,Healthcare
+OGI,OrganiGram Holdings Inc.,NASDAQ,Healthcare
+APHA,Aphria Inc.,NASDAQ,Healthcare
+WEED,Canopy Growth Corporation,TSE,Healthcare
+PLTR,Palantir Technologies Inc.,NYSE,Technology
+RBLX,Roblox Corporation,NYSE,Communication Services
+COIN,Coinbase Global Inc.,NASDAQ,Financial Services
+HOOD,Robinhood Markets Inc.,NASDAQ,Financial Services
+SOFI,SoFi Technologies Inc.,NASDAQ,Financial Services
+UPST,Upstart Holdings Inc.,NASDAQ,Financial Services
+AFRM,Affirm Holdings Inc.,NASDAQ,Financial Services
+LC,LendingClub Corporation,NYSE,Financial Services
+OPEN,Opendoor Technologies Inc.,NASDAQ,Real Estate
+Z,Zillow Group Inc.,NASDAQ,Communication Services
+RKT,Rocket Companies Inc.,NYSE,Financial Services
+UWMC,UWM Holdings Corporation,NYSE,Financial Services
+CLOV,Clover Health Investments Corp.,NASDAQ,Healthcare
+WISH,ContextLogic Inc.,NASDAQ,Consumer Discretionary
+CLOV,Clover Health Investments Corp.,NASDAQ,Healthcare
+SPCE,Virgin Galactic Holdings Inc.,NYSE,Industrials
+NKLA,Nikola Corporation,NASDAQ,Industrials
+RIDE,Lordstown Motors Corp.,NASDAQ,Consumer Discretionary
+WKHS,Workhorse Group Inc.,NASDAQ,Industrials
+HYLN,Hyliion Holdings Corp.,NYSE,Industrials
+FSR,Fisker Inc.,NYSE,Consumer Discretionary
+LCID,Lucid Group Inc.,NASDAQ,Consumer Discretionary
+RIVN,Rivian Automotive Inc.,NASDAQ,Consumer Discretionary
+GOEV,Canoo Inc.,NASDAQ,Consumer Discretionary
+XL,XL Fleet Corp.,NYSE,Industrials
+BLNK,Blink Charging Co.,NASDAQ,Industrials
+CHPT,ChargePoint Holdings Inc.,NYSE,Industrials
+EVGO,EVgo Inc.,NASDAQ,Industrials
+PLUG,Plug Power Inc.,NASDAQ,Energy
+FCEL,FuelCell Energy Inc.,NASDAQ,Energy
+BE,Bloom Energy Corporation,NYSE,Energy
+BLDP,Ballard Power Systems Inc.,NASDAQ,Energy
+CLNE,Clean Energy Fuels Corp.,NASDAQ,Energy
+RNG,RingCentral Inc.,NYSE,Technology
+WORK,Slack Technologies Inc.,NYSE,Technology
+TEAM,Atlassian Corporation,NASDAQ,Technology
+OKTA,Okta Inc.,NASDAQ,Technology
+CRWD,CrowdStrike Holdings Inc.,NASDAQ,Technology
+ZS,Zscaler Inc.,NASDAQ,Technology
+DDOG,Datadog Inc.,NASDAQ,Technology
+SNOW,Snowflake Inc.,NYSE,Technology
+MDB,MongoDB Inc.,NASDAQ,Technology
+SPLK,Splunk Inc.,NASDAQ,Technology
+WDAY,Workday Inc.,NASDAQ,Technology
+VEEV,Veeva Systems Inc.,NYSE,Technology
+ZI,ZoomInfo Technologies Inc.,NASDAQ,Technology
+BILL,Bill.com Holdings Inc.,NYSE,Technology
+SMAR,Smartsheet Inc.,NYSE,Technology
+FROG,JFrog Ltd.,NASDAQ,Technology
+AI,C3.ai Inc.,NYSE,Technology
+PATH,UiPath Inc.,NYSE,Technology
+GTLB,GitLab Inc.,NASDAQ,Technology
+S,SentinelOne Inc.,NYSE,Technology
+CRWD,CrowdStrike Holdings Inc.,NASDAQ,Technology
+NET,Cloudflare Inc.,NYSE,Technology
+FSLY,Fastly Inc.,NYSE,Technology
+ESTC,Elastic N.V.,NYSE,Technology
+SUMO,Sumo Logic Inc.,NASDAQ,Technology
+CYBR,CyberArk Software Ltd.,NASDAQ,Technology
+PANW,Palo Alto Networks Inc.,NASDAQ,Technology
+FTNT,Fortinet Inc.,NASDAQ,Technology
+CHKP,Check Point Software Technologies Ltd.,NASDAQ,Technology
+VRNS,Varonis Systems Inc.,NASDAQ,Technology
+QLYS,Qualys Inc.,NASDAQ,Technology
+TENB,Tenable Holdings Inc.,NASDAQ,Technology
+RPD,Rapid7 Inc.,NASDAQ,Technology
+SAIL,SailPoint Technologies Holdings Inc.,NYSE,Technology
+PING,Ping Identity Holding Corp.,NYSE,Technology
+OKTA,Okta Inc.,NASDAQ,Technology
