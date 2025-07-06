@@ -67,6 +67,33 @@ st.sidebar.header("Konfiguration")
 # --- Reddit API Konfiguration ---
 with st.sidebar.expander("Reddit API Credentials", expanded=False):
     st.markdown("[Reddit API Settings](https://www.reddit.com/prefs/apps)")
+
+    if st.button("Streamlit Secrets nutzen", key="use_streamlit_secrets"):
+        secrets_password = st.text_input("Secrets Passwort", type="password", key="secrets_password_input")
+        if secrets_password:
+            if secrets_password == st.secrets.get("secrets_password"):
+                st.success("Passwort korrekt! Lade Konfiguration aus Streamlit Secrets.")
+                
+                # Lade Reddit-Daten
+                localS.setItem("client_id", st.secrets.get("client_id", ""), key="secret_client_id")
+                localS.setItem("client_secret", st.secrets.get("client_secret", ""), key="secret_client_secret")
+                localS.setItem("username", st.secrets.get("username", ""), key="secret_username")
+                localS.setItem("password", st.secrets.get("password", ""), key="secret_password")
+
+                # Lade Speicher-Daten
+                localS.setItem("storage_type", st.secrets.get("storage_type", "local"), key="secret_storage_type")
+                if st.secrets.get("storage_type") == 's3':
+                    localS.setItem("aws_access_key_id", st.secrets.get("aws_access_key_id", ""), key="secret_aws_id")
+                    localS.setItem("aws_secret_access_key", st.secrets.get("aws_secret_access_key", ""), key="secret_aws_secret")
+                    localS.setItem("s3_bucket_name", st.secrets.get("s3_bucket_name", ""), key="secret_s3_bucket")
+                    localS.setItem("aws_region", st.secrets.get("aws_region", "eu-central-1"), key="secret_aws_region")
+                
+                load_config_from_storage() # Globale Konfiguration neu laden
+                time.sleep(2)
+                st.rerun()
+            else:
+                st.error("Falsches Passwort.")
+
     client_id = st.text_input(
         "Client ID", 
         value=localS.getItem("client_id") or "", 
