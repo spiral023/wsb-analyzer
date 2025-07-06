@@ -7,12 +7,20 @@ import pandas as pd
 import json
 import os
 import glob
+import io
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import seaborn as sns
 from collections import defaultdict
 import logging
-from config import DATA_PATHS
+from config import DATA_PATHS, STORAGE_CONFIG
+
+if STORAGE_CONFIG['type'] == 's3':
+    try:
+        from s3_handler import list_files, get_file_content, upload_file_obj
+    except ImportError:
+        print("s3_handler.py nicht gefunden. S3-Funktionen werden nicht verfügbar sein.")
+        list_files, get_file_content, upload_file_obj = None, None, None
 
 class WSBDataAnalyzer:
     def __init__(self):
@@ -35,30 +43,46 @@ class WSBDataAnalyzer:
         self.logger = logging.getLogger(__name__)
         
     def load_all_results(self):
-        """Lädt alle gespeicherten Crawling-Ergebnisse"""
+        """Lädt alle gespeicherten Crawling-Ergebnisse von lokal oder S3."""
+        self.all_results = []
         try:
-            # Finde alle JSON-Dateien im Results-Verzeichnis
-            json_files = glob.glob(f"{DATA_PATHS['results_dir']}/*.json")
-            
-            if not json_files:
-                self.logger.warning("No result files found")
-                return False
+            if STORAGE_CONFIG['type'] == 's3' and list_files and get_file_content:
+                self.logger.info("Lade Ergebnisse von S3...")
+                s3_files = list_files(prefix=DATA_PATHS['results_dir'])
+                if s3_files is None:
+                    return False
                 
-            self.all_results = []
-            
-            for json_file in json_files:
-                try:
-                    with open(json_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                        self.all_results.append(data)
-                except Exception as e:
-                    self.logger.error(f"Error loading {json_file}: {e}")
-                    
-            self.logger.info(f"Loaded {len(self.all_results)} result files")
+                json_files = [f for f in s3_files if f.endswith('.json')]
+                if not json_files:
+                    self.logger.warning("Keine Ergebnisdateien auf S3 gefunden.")
+                    return False
+                
+                for s3_file_key in json_files:
+                    try:
+                        content = get_file_content(s3_file_key)
+                        if content:
+                            self.all_results.append(json.loads(content))
+                    except Exception as e:
+                        self.logger.error(f"Fehler beim Laden von {s3_file_key} von S3: {e}")
+            else:
+                self.logger.info("Lade Ergebnisse vom lokalen Dateisystem...")
+                local_json_files = glob.glob(f"{DATA_PATHS['results_dir']}/*.json")
+                if not local_json_files:
+                    self.logger.warning("Keine lokalen Ergebnisdateien gefunden.")
+                    return False
+                
+                for json_file in local_json_files:
+                    try:
+                        with open(json_file, 'r', encoding='utf-8') as f:
+                            self.all_results.append(json.load(f))
+                    except Exception as e:
+                        self.logger.error(f"Fehler beim Laden von {json_file}: {e}")
+
+            self.logger.info(f"{len(self.all_results)} Ergebnisdateien geladen.")
             return len(self.all_results) > 0
-            
+
         except Exception as e:
-            self.logger.error(f"Error loading results: {e}")
+            self.logger.error(f"Fehler beim Laden der Ergebnisse: {e}")
             return False
             
     def create_combined_dataframe(self):
@@ -210,41 +234,53 @@ class WSBDataAnalyzer:
             return None
             
     def save_analysis_results(self):
-        """Speichert die Analyseergebnisse"""
+        """Speichert die Analyseergebnisse auf lokal oder S3."""
         try:
-            os.makedirs(DATA_PATHS['analysis_dir'], exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
+            analysis_dir = DATA_PATHS['analysis_dir']
+
+            # Helferfunktion zum Speichern
+            def _save(content, filename, is_bytes=False):
+                if STORAGE_CONFIG['type'] == 's3' and upload_file_obj:
+                    buffer = io.BytesIO(content if is_bytes else content.encode('utf-8'))
+                    s3_key = f"{analysis_dir}{filename}"
+                    if upload_file_obj(buffer, s3_key):
+                        self.logger.info(f"Analyse-Datei auf S3 unter {s3_key} gespeichert.")
+                    else:
+                        self.logger.error(f"Fehler beim Speichern von {s3_key} auf S3.")
+                else:
+                    os.makedirs(analysis_dir, exist_ok=True)
+                    local_path = os.path.join(analysis_dir, filename)
+                    mode = 'wb' if is_bytes else 'w'
+                    encoding = None if is_bytes else 'utf-8'
+                    with open(local_path, mode, encoding=encoding) as f:
+                        f.write(content)
+                    self.logger.info(f"Analyse-Datei lokal unter {local_path} gespeichert.")
+
             # Speichere kombinierten DataFrame
             if self.combined_df is not None and not self.combined_df.empty:
-                csv_filename = f"{DATA_PATHS['analysis_dir']}/combined_analysis_{timestamp}.csv"
-                self.combined_df.to_csv(csv_filename, index=False)
-                self.logger.info(f"Combined analysis saved to {csv_filename}")
+                _save(self.combined_df.to_csv(index=False), f"combined_analysis_{timestamp}.csv")
                 
                 # Speichere Top-Symbole
                 top_symbols = self.get_top_symbols_overall(50)
                 if not top_symbols.empty:
-                    top_filename = f"{DATA_PATHS['analysis_dir']}/top_symbols_{timestamp}.csv"
-                    top_symbols.to_csv(top_filename, index=False)
+                    _save(top_symbols.to_csv(index=False), f"top_symbols_{timestamp}.csv")
                     
                 # Speichere Trending-Symbole
                 trending = self.get_trending_symbols(7, 20)
                 if not trending.empty:
-                    trending_filename = f"{DATA_PATHS['analysis_dir']}/trending_symbols_{timestamp}.csv"
-                    trending.to_csv(trending_filename, index=False)
+                    _save(trending.to_csv(index=False), f"trending_symbols_{timestamp}.csv")
                     
             # Speichere Summary Report
             summary = self.create_summary_report()
             if summary:
-                summary_filename = f"{DATA_PATHS['analysis_dir']}/summary_report_{timestamp}.json"
-                with open(summary_filename, 'w', encoding='utf-8') as f:
-                    json.dump(summary, f, indent=2, ensure_ascii=False, default=str)
-                self.logger.info(f"Summary report saved to {summary_filename}")
+                summary_content = json.dumps(summary, indent=2, ensure_ascii=False, default=str)
+                _save(summary_content, f"summary_report_{timestamp}.json")
                 
             return True
             
         except Exception as e:
-            self.logger.error(f"Error saving analysis results: {e}")
+            self.logger.error(f"Fehler beim Speichern der Analyseergebnisse: {e}")
             return False
             
     def create_visualizations(self, save_plots=True):
@@ -302,11 +338,23 @@ class WSBDataAnalyzer:
             plt.tight_layout()
             
             if save_plots:
-                os.makedirs(DATA_PATHS['analysis_dir'], exist_ok=True)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                plot_filename = f"{DATA_PATHS['analysis_dir']}/wsb_analysis_plots_{timestamp}.png"
-                plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
-                self.logger.info(f"Plots saved to {plot_filename}")
+                plot_filename = f"wsb_analysis_plots_{timestamp}.png"
+                
+                if STORAGE_CONFIG['type'] == 's3' and upload_file_obj:
+                    img_data = io.BytesIO()
+                    plt.savefig(img_data, format='png', dpi=300, bbox_inches='tight')
+                    img_data.seek(0)
+                    s3_key = f"{DATA_PATHS['analysis_dir']}{plot_filename}"
+                    if upload_file_obj(img_data, s3_key):
+                        self.logger.info(f"Plot auf S3 unter {s3_key} gespeichert.")
+                    else:
+                        self.logger.error(f"Fehler beim Speichern des Plots auf S3.")
+                else:
+                    os.makedirs(DATA_PATHS['analysis_dir'], exist_ok=True)
+                    local_plot_path = os.path.join(DATA_PATHS['analysis_dir'], plot_filename)
+                    plt.savefig(local_plot_path, dpi=300, bbox_inches='tight')
+                    self.logger.info(f"Plot lokal unter {local_plot_path} gespeichert.")
                 
             return fig
             

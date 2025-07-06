@@ -8,10 +8,18 @@ import pandas as pd
 import re
 import json
 import os
+import io
 from datetime import datetime, timezone
 from collections import defaultdict, Counter
 import logging
-from config import REDDIT_CONFIG, CRAWLER_CONFIG, DATA_PATHS
+from config import REDDIT_CONFIG, CRAWLER_CONFIG, DATA_PATHS, STORAGE_CONFIG
+
+if STORAGE_CONFIG['type'] == 's3':
+    try:
+        from s3_handler import upload_file_obj
+    except ImportError:
+        print("s3_handler.py nicht gefunden. S3-Upload wird nicht funktionieren.")
+        upload_file_obj = None
 
 class WSBStockCrawler:
     def __init__(self):
@@ -148,19 +156,12 @@ class WSBStockCrawler:
             return False
             
     def save_results(self):
-        """Speichert die Crawling-Ergebnisse"""
+        """Speichert die Crawling-Ergebnisse entweder lokal oder auf S3."""
         try:
-            # Erstelle Verzeichnisse falls sie nicht existieren
-            os.makedirs(DATA_PATHS['results_dir'], exist_ok=True)
-            
-            # Erstelle Zeitstempel für den Dateinamen
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            
-            # Sortiere Ergebnisse nach Häufigkeit
             sorted_results = dict(sorted(self.results.items(), key=lambda x: x[1], reverse=True))
-            
-            # Speichere als JSON
-            json_filename = f"{DATA_PATHS['results_dir']}/wsb_mentions_{timestamp}.json"
+
+            # JSON-Daten vorbereiten
             result_data = {
                 'timestamp': timestamp,
                 'crawl_date': datetime.now(timezone.utc).isoformat(),
@@ -169,22 +170,51 @@ class WSBStockCrawler:
                 'subreddit': CRAWLER_CONFIG['subreddit'],
                 'results': sorted_results
             }
+            json_content = json.dumps(result_data, indent=2, ensure_ascii=False)
             
-            with open(json_filename, 'w', encoding='utf-8') as f:
-                json.dump(result_data, f, indent=2, ensure_ascii=False)
-                
-            # Speichere auch als CSV für einfache Analyse
-            csv_filename = f"{DATA_PATHS['results_dir']}/wsb_mentions_{timestamp}.csv"
+            # CSV-Daten vorbereiten
             df = pd.DataFrame(list(sorted_results.items()), columns=['Symbol', 'Mentions'])
             df['Timestamp'] = timestamp
             df['Date'] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            df.to_csv(csv_filename, index=False)
-            
-            self.logger.info(f"Results saved to {json_filename} and {csv_filename}")
-            return json_filename, csv_filename
-            
+            csv_content = df.to_csv(index=False)
+
+            json_filename = f"wsb_mentions_{timestamp}.json"
+            csv_filename = f"wsb_mentions_{timestamp}.csv"
+
+            if STORAGE_CONFIG['type'] == 's3' and upload_file_obj:
+                # Auf S3 speichern
+                self.logger.info("Speichere Ergebnisse auf S3...")
+                json_obj_name = f"{DATA_PATHS['results_dir']}{json_filename}"
+                csv_obj_name = f"{DATA_PATHS['results_dir']}{csv_filename}"
+
+                # JSON hochladen
+                json_buffer = io.BytesIO(json_content.encode('utf-8'))
+                upload_file_obj(json_buffer, json_obj_name)
+
+                # CSV hochladen
+                csv_buffer = io.BytesIO(csv_content.encode('utf-8'))
+                upload_file_obj(csv_buffer, csv_obj_name)
+                
+                self.logger.info(f"Ergebnisse auf S3 unter {json_obj_name} und {csv_obj_name} gespeichert")
+                return json_obj_name, csv_obj_name
+            else:
+                # Lokal speichern (Fallback)
+                self.logger.info("Speichere Ergebnisse lokal...")
+                os.makedirs(DATA_PATHS['results_dir'], exist_ok=True)
+                
+                local_json_path = os.path.join(DATA_PATHS['results_dir'], json_filename)
+                with open(local_json_path, 'w', encoding='utf-8') as f:
+                    f.write(json_content)
+
+                local_csv_path = os.path.join(DATA_PATHS['results_dir'], csv_filename)
+                with open(local_csv_path, 'w', encoding='utf-8') as f:
+                    f.write(csv_content)
+                
+                self.logger.info(f"Ergebnisse lokal unter {local_json_path} und {local_csv_path} gespeichert")
+                return local_json_path, local_csv_path
+
         except Exception as e:
-            self.logger.error(f"Error saving results: {e}")
+            self.logger.error(f"Fehler beim Speichern der Ergebnisse: {e}")
             return None, None
             
     def get_top_mentions(self, limit=20):

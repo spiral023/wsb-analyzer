@@ -35,6 +35,19 @@ DATA_PATHS = {
     'logs_dir': 'logs/'
 }
 
+# Speicher-Konfiguration
+STORAGE_CONFIG = {
+    'type': os.getenv('STORAGE_TYPE', 'local')  # 'local' oder 's3'
+}
+
+# S3 Konfiguration (nur relevant wenn STORAGE_TYPE = 's3')
+S3_CONFIG = {
+    'aws_access_key_id': os.getenv('AWS_ACCESS_KEY_ID'),
+    'aws_secret_access_key': os.getenv('AWS_SECRET_ACCESS_KEY'),
+    'region_name': os.getenv('AWS_REGION', 'eu-central-1'),
+    'bucket_name': os.getenv('S3_BUCKET_NAME')
+}
+
 # GUI Einstellungen
 GUI_CONFIG = {
     'window_title': 'WSB Stock Crawler',
