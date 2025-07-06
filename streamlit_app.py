@@ -66,34 +66,39 @@ st.sidebar.header("Konfiguration")
 
 # --- Reddit API Konfiguration ---
 with st.sidebar.expander("Reddit API Credentials", expanded=False):
+    st.markdown("[Reddit API Settings](https://www.reddit.com/prefs/apps)")
     client_id = st.text_input(
         "Client ID", 
         value=localS.getItem("client_id") or "", 
-        type="password"
+        type="password",
+        key="reddit_client_id_input"
     )
     client_secret = st.text_input(
         "Client Secret", 
         value=localS.getItem("client_secret") or "", 
-        type="password"
+        type="password",
+        key="reddit_client_secret_input"
     )
     username = st.text_input(
         "Username", 
-        value=localS.getItem("username") or ""
+        value=localS.getItem("username") or "",
+        key="reddit_username_input"
     )
     password = st.text_input(
         "Password", 
         value=localS.getItem("password") or "", 
-        type="password"
+        type="password",
+        key="reddit_password_input"
     )
 
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("Speichern & Testen"):
+        if st.button("Speichern & Testen", key="save_test_reddit_button"):
             # Save credentials to local storage
-            localS.setItem("client_id", client_id, key="set_client_id")
-            localS.setItem("client_secret", client_secret, key="set_client_secret")
-            localS.setItem("username", username, key="set_username")
-            localS.setItem("password", password, key="set_password")
+            localS.setItem("client_id", client_id, key="ls_client_id")
+            localS.setItem("client_secret", client_secret, key="ls_client_secret")
+            localS.setItem("username", username, key="ls_username")
+            localS.setItem("password", password, key="ls_password")
             
             with st.spinner("Verbindung wird getestet..."):
                 # Temporär Konfiguration für den Test überschreiben
@@ -112,11 +117,11 @@ with st.sidebar.expander("Reddit API Credentials", expanded=False):
                     st.error("Verbindung fehlgeschlagen. Bitte überprüfen Sie Ihre Daten.")
 
     with col2:
-        if st.button("Daten löschen"):
-            localS.setItem("client_id", "", key="delete_client_id")
-            localS.setItem("client_secret", "", key="delete_client_secret")
-            localS.setItem("username", "", key="delete_username")
-            localS.setItem("password", "", key="delete_password")
+        if st.button("Daten löschen", key="delete_reddit_data_button"):
+            localS.setItem("client_id", "", key="ls_delete_client_id")
+            localS.setItem("client_secret", "", key="ls_delete_client_secret")
+            localS.setItem("username", "", key="ls_delete_username")
+            localS.setItem("password", "", key="ls_delete_password")
             st.info("Gespeicherte API-Daten gelöscht.")
             time.sleep(2)
             st.rerun()
@@ -131,18 +136,18 @@ with st.sidebar.expander("Speicher-Konfiguration"):
     )
 
     if storage_type == 's3':
-        aws_access_key_id = st.text_input("AWS Access Key ID", value=localS.getItem("aws_access_key_id") or "", type="password")
-        aws_secret_access_key = st.text_input("AWS Secret Access Key", value=localS.getItem("aws_secret_access_key") or "", type="password")
-        s3_bucket_name = st.text_input("S3 Bucket Name", value=localS.getItem("s3_bucket_name") or "")
-        aws_region = st.text_input("AWS Region", value=localS.getItem("aws_region") or "eu-central-1")
+        aws_access_key_id = st.text_input("AWS Access Key ID", value=localS.getItem("aws_access_key_id") or "", type="password", key="aws_access_key_id_input")
+        aws_secret_access_key = st.text_input("AWS Secret Access Key", value=localS.getItem("aws_secret_access_key") or "", type="password", key="aws_secret_access_key_input")
+        s3_bucket_name = st.text_input("S3 Bucket Name, z.B. arn:aws:s3:::<bucket-name>", value=localS.getItem("s3_bucket_name") or "", key="s3_bucket_name_input")
+        aws_region = st.text_input("AWS Region, z.B. eu-west-1", value=localS.getItem("aws_region") or "eu-central-1", key="aws_region_input")
 
-        if st.button("S3-Konfiguration speichern & testen"):
+        if st.button("S3-Konfiguration speichern & testen", key="save_test_s3_button"):
             # In LocalStorage speichern
-            localS.setItem("storage_type", storage_type, key="set_storage_type")
-            localS.setItem("aws_access_key_id", aws_access_key_id, key="set_aws_id")
-            localS.setItem("aws_secret_access_key", aws_secret_access_key, key="set_aws_secret")
-            localS.setItem("s3_bucket_name", s3_bucket_name, key="set_s3_bucket")
-            localS.setItem("aws_region", aws_region, key="set_aws_region")
+            localS.setItem("storage_type", storage_type, key="ls_storage_type")
+            localS.setItem("aws_access_key_id", aws_access_key_id, key="ls_aws_id")
+            localS.setItem("aws_secret_access_key", aws_secret_access_key, key="ls_aws_secret")
+            localS.setItem("s3_bucket_name", s3_bucket_name, key="ls_s3_bucket")
+            localS.setItem("aws_region", aws_region, key="ls_aws_region")
 
             # Konfiguration zur Laufzeit aktualisieren und sofort laden
             load_config_from_storage()
@@ -166,24 +171,90 @@ with st.sidebar.expander("Speicher-Konfiguration"):
 # --- Session-Auswahl für S3 ---
 if STORAGE_CONFIG['type'] == 's3' and s3_handler:
     st.sidebar.subheader("S3 Session-Auswahl")
-    # Wir suchen in 'data/results/', da dort die primären Session-Ordner erstellt werden
-    sessions = s3_handler.list_sessions(base_prefix=DATA_PATHS['results_dir'])
-    if sessions:
+    if st.sidebar.button("S3 Sessions laden", key="load_s3_sessions_button"):
+        # Wir suchen in 'data/results/', da dort die primären Session-Ordner erstellt werden
+        sessions = s3_handler.list_sessions(base_prefix=DATA_PATHS['results_dir'])
+        if sessions:
+            st.session_state.s3_sessions = sessions
+        else:
+            st.session_state.s3_sessions = []
+            st.sidebar.info("Keine S3-Sessions gefunden.")
+
+    if 's3_sessions' in st.session_state and st.session_state.s3_sessions:
         st.session_state.selected_session = st.sidebar.selectbox(
             "Wähle eine Session",
-            options=sessions,
+            options=st.session_state.s3_sessions,
             index=0,
             key="session_selector",
             help="Zeigt Ordner im Format YYYY-MM-DD/HHMMSS/"
         )
-    else:
+    elif 's3_sessions' in st.session_state:
         st.sidebar.info("Keine S3-Sessions gefunden.")
 
 # --- Crawler-Einstellungen ---
 st.sidebar.subheader("Crawler-Einstellungen")
-post_limit = st.sidebar.slider("Anzahl Posts", 10, 500, 100)
-comment_limit = st.sidebar.slider("Kommentare pro Post", 10, 200, 50)
+post_limit = st.sidebar.slider("Anzahl Posts", 10, 500, 100, key="post_limit_slider")
+comment_limit = st.sidebar.slider("Kommentare pro Post", 10, 200, 50, key="comment_limit_slider")
 
+st.sidebar.markdown("---")
+st.sidebar.markdown("Built by sp23")
+
+# --- Konfiguration Import/Export ---
+st.sidebar.subheader("Konfiguration Import/Export")
+
+def get_all_config_from_local_storage():
+    config_data = {}
+    # Reddit API
+    config_data['client_id'] = localS.getItem("client_id")
+    config_data['client_secret'] = localS.getItem("client_secret")
+    config_data['username'] = localS.getItem("username")
+    config_data['password'] = localS.getItem("password")
+    # Storage
+    config_data['storage_type'] = localS.getItem("storage_type")
+    config_data['aws_access_key_id'] = localS.getItem("aws_access_key_id")
+    config_data['aws_secret_access_key'] = localS.getItem("aws_secret_access_key")
+    config_data['s3_bucket_name'] = localS.getItem("s3_bucket_name")
+    config_data['aws_region'] = localS.getItem("aws_region")
+    return config_data
+
+def set_all_config_to_local_storage(config_data):
+    # Reddit API
+    localS.setItem("client_id", config_data.get('client_id', ''), key="import_client_id")
+    localS.setItem("client_secret", config_data.get('client_secret', ''), key="import_client_secret")
+    localS.setItem("username", config_data.get('username', ''), key="import_username")
+    localS.setItem("password", config_data.get('password', ''), key="import_password")
+    # Storage
+    localS.setItem("storage_type", config_data.get('storage_type', 'local'), key="import_storage_type")
+    localS.setItem("aws_access_key_id", config_data.get('aws_access_key_id', ''), key="import_aws_access_key_id")
+    localS.setItem("aws_secret_access_key", config_data.get('aws_secret_access_key', ''), key="import_aws_secret_access_key")
+    localS.setItem("s3_bucket_name", config_data.get('s3_bucket_name', ''), key="import_s3_bucket_name")
+    localS.setItem("aws_region", config_data.get('aws_region', 'eu-central-1'), key="import_aws_region")
+    load_config_from_storage() # Reload global config after setting local storage
+
+import json
+
+with st.sidebar.expander("Konfiguration Import/Export"):
+    if st.button("Konfiguration exportieren", key="export_config_button"):
+        config_to_export = get_all_config_from_local_storage()
+        json_string = json.dumps(config_to_export, indent=4)
+        st.download_button(
+            label="Konfiguration herunterladen",
+            data=json_string,
+            file_name="wsb_analyzer_config.json",
+            mime="application/json",
+            key="download_config_button"
+        )
+
+    uploaded_file = st.file_uploader("Konfiguration importieren", type="json", key="upload_config_uploader")
+    if uploaded_file is not None:
+        try:
+            config_data = json.load(uploaded_file)
+            set_all_config_to_local_storage(config_data)
+            st.success("Konfiguration erfolgreich importiert! Bitte laden Sie die Seite neu, um die Änderungen zu sehen.")
+            time.sleep(2)
+            # st.rerun() # Verursacht die Endlosschleife
+        except Exception as e:
+            st.error(f"Fehler beim Import der Konfiguration: {e}")
 
 # --- Hauptbereich ---
 tab_dashboard, tab_results, tab_visuals, tab_logs = st.tabs(["📊 Dashboard", "📋 Ergebnisse", "📈 Visualisierungen", "📜 Logs"])
@@ -199,7 +270,7 @@ with tab_dashboard:
         localS.getItem("password")
     ])
 
-    if st.button("Crawlen und Analysieren", disabled=st.session_state.crawling_in_progress or not api_configured):
+    if st.button("Crawlen und Analysieren", disabled=st.session_state.crawling_in_progress or not api_configured, key="crawl_analyze_button"):
         st.session_state.crawling_in_progress = True
         st.rerun()
 
@@ -262,6 +333,13 @@ with tab_results:
 
     st.subheader("Erwähnungen der ausgewählten Session")
     try:
+        # Lade die Stock-Symbole für die Anreicherung
+        try:
+            stock_symbols_df = pd.read_csv(DATA_PATHS['stock_symbols'])
+        except FileNotFoundError:
+            st.error(f"Stock-Symbol-Datei nicht gefunden unter: {DATA_PATHS['stock_symbols']}")
+            stock_symbols_df = pd.DataFrame() # Leerer DataFrame, um Fehler zu vermeiden
+
         file_content = None
         if STORAGE_CONFIG['type'] == 's3' and s3_handler:
             if st.session_state.selected_session:
@@ -280,8 +358,19 @@ with tab_results:
                     file_content = f.read()
 
         if file_content:
-            df = pd.read_csv(io.StringIO(file_content))
-            st.dataframe(df)
+            mentions_df = pd.read_csv(io.StringIO(file_content))
+            
+            # Anreichern der Daten
+            if not stock_symbols_df.empty:
+                # Annahme: Die Spalte in wsb_mentions.csv heißt 'Symbol'
+                if 'Symbol' in mentions_df.columns and 'Symbol' in stock_symbols_df.columns:
+                    merged_df = pd.merge(mentions_df, stock_symbols_df, on='Symbol', how='left')
+                    st.dataframe(merged_df)
+                else:
+                    st.warning("Die Spalte 'Symbol' wurde nicht in beiden Dateien gefunden. Zeige unbearbeitete Daten.")
+                    st.dataframe(mentions_df)
+            else:
+                st.dataframe(mentions_df)
         else:
             st.info("Noch keine Ergebnisdateien gefunden.")
             
@@ -322,7 +411,7 @@ with tab_visuals:
 with tab_logs:
     st.header("Logs der ausgewählten Session")
 
-    if st.button("Logs laden"):
+    if st.button("Logs laden", key="load_logs_button"):
         session = st.session_state.get('selected_session')
         if not session:
             st.warning("Bitte wählen Sie zuerst eine Session in der Seitenleiste aus.")
