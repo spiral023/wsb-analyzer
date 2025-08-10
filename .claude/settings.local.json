@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rmdir:*)",
+      "Bash(if exist venv rd /s /q venv)",
+      "Bash(python:*)",
+      "Bash(grep:*)"
+    ],
+    "deny": []
+  }
+}
